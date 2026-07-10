@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Turing Machine Toy</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0f0f14;
+  color: #e0dce8;
+  font-family: 'Courier New', monospace;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+h1 {
+  font-size: 1.4em;
+  color: #b48cff;
+  margin-bottom: 4px;
+}
+.subtitle {
+  font-size: 0.75em;
+  color: #6a6478;
+  margin-bottom: 20px;
+}
+#tape-container {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 20px 0;
+  min-height: 60px;
+}
+.cell {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1em;
+  font-weight: bold;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+.cell-0 { background: #1a1824; color: #4a4458; }
+.cell-1 { background: #b48cff; color: #0f0f14; }
+.cell-head {
+  border: 2px solid #ffc850;
+  box-shadow: 0 0 8px rgba(255, 200, 80, 0.4);
+}
+#state-display {
+  font-size: 1.2em;
+  margin: 10px 0;
+  color: #ffc850;
+}
+#step-count {
+  font-size: 0.9em;
+  color: #6a6478;
+}
+#controls {
+  display: flex;
+  gap: 10px;
+  margin: 15px 0;
+}
+button {
+  background: #2a2438;
+  color: #b48cff;
+  border: 1px solid #3a3448;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 0.9em;
+  border-radius: 4px;
+  cursor: pointer;
+}
+button:hover { background: #3a3448; }
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: #b48cff; color: #0f0f14; border-color: #b48cff; }
+button.primary:hover { background: #c9a8ff; }
+button.danger { color: #ff6b6b; border-color: #ff6b6b; }
+#rules-container {
+  margin: 20px 0;
+  width: 100%;
+  max-width: 600px;
+}
+#rules-container h2 {
+  font-size: 1em;
+  color: #8a8498;
+  margin-bottom: 10px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 6px 10px;
+  text-align: center;
+  border-bottom: 1px solid #2a2438;
+}
+th { color: #6a6478; font-size: 0.8em; }
+td input, td select {
+  background: #1a1824;
+  color: #e0dce8;
+  border: 1px solid #3a3448;
+  padding: 4px 6px;
+  font-family: inherit;
+  font-size: 0.85em;
+  border-radius: 3px;
+  width: 50px;
+  text-align: center;
+}
+td select { width: 70px; }
+#presets {
+  margin: 10px 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#history-canvas {
+  margin: 20px 0;
+  border-radius: 4px;
+  border: 1px solid #2a2438;
+}
+.halted { color: #ff6b6b; }
+.running { color: #7cff8c; }
+</style>
+</head>
+<body>
+<h1>Turing Machine Toy</h1>
+<div class="subtitle">by Roux, a raccoon who watches machines</div>
+
+<div id="presets">
+  <button onclick="loadPreset('bb2')">BB(2)</button>
+  <button onclick="loadPreset('bb3s')">BB(3) shift</button>
+  <button onclick="loadPreset('bb3o')">BB(3) ones</button>
+  <button onclick="loadPreset('bb4')">BB(4)</button>
+  <button onclick="loadPreset('custom')" class="primary">Custom</button>
+</div>
+
+<div id="state-display">State: <span id="cur-state">A</span> | <span id="status" class="running">READY</span></div>
+<div id="step-count">Step: <span id="steps">0</span> | Score: <span id="score">0</span></div>
+
+<div id="tape-container"></div>
+
+<div id="controls">
+  <button onclick="step()" id="btn-step">Step</button>
+  <button onclick="run()" id="btn-run">Run</button>
+  <button onclick="stopRunning()" id="btn-stop" disabled>Stop</button>
+  <button onclick="reset()" class="danger">Reset</button>
+</div>
+
+<canvas id="history-canvas" width="600" height="200"></canvas>
+
+<div id="rules-container">
+  <h2>Transition Rules</h2>
+  <table>
+    <thead>
+      <tr><th>State</th><th>Read</th><th>Write</th><th>Move</th><th>Next</th></tr>
+    </thead>
+    <tbody id="rules-body"></tbody>
+  </table>
+</div>
+
+<script>
+const PRESETS = {
+  bb2: {
+    name: 'BB(2)', states: 2,
+    rules: {
+      'A0': [1,'R','B'], 'A1': [1,'L','B'],
+      'B0': [1,'L','A'], 'B1': [1,'R','H'],
+    }
+  },
+  bb3s: {
+    name: 'BB(3) shift', states: 3,
+    rules: {
+      'A0': [1,'R','B'], 'A1': [1,'R','H'],
+      'B0': [1,'L','B'], 'B1': [0,'R','C'],
+      'C0': [1,'L','C'], 'C1': [1,'L','A'],
+    }
+  },
+  bb3o: {
+    name: 'BB(3) ones', states: 3,
+    rules: {
+      'A0': [1,'R','B'], 'A1': [1,'R','H'],
+      'B0': [0,'R','C'], 'B1': [1,'R','B'],
+      'C0': [1,'L','C'], 'C1': [1,'L','A'],
+    }
+  },
+  bb4: {
+    name: 'BB(4)', states: 4,
+    rules: {
+      'A0': [1,'R','B'], 'A1': [1,'L','B'],
+      'B0': [1,'L','A'], 'B1': [0,'L','C'],
+      'C0': [1,'R','H'], 'C1': [1,'L','D'],
+      'D0': [1,'R','D'], 'D1': [0,'R','A'],
+    }
+  },
+  custom: {
+    name: 'Custom', states: 2,
+    rules: {
+      'A0': [1,'R','B'], 'A1': [1,'L','H'],
+      'B0': [1,'L','A'], 'B1': [1,'R','H'],
+    }
+  }
+};
+
+const STATE_COLORS = {
+  A: '#ff6b6b', B: '#6bb5ff', C: '#7cff8c', D: '#ffc850',
+  E: '#ff8cf0', F: '#8cfff0', H: '#666'
+};
+const LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+let tape = {};
+let head = 0;
+let state = 'A';
+let steps = 0;
+let halted = false;
+let rules = {};
+let numStates = 2;
+let history = [];
+let runInterval = null;
+let tapeMin = -15;
+let tapeMax = 15;
+
+function readTape(pos) { return tape[pos] || 0; }
+
+function renderTape() {
+  const container = document.getElementById('tape-container');
+  // Expand view if head goes near edges
+  if (head <= tapeMin + 3) tapeMin = head - 10;
+  if (head >= tapeMax - 3) tapeMax = head + 10;
+  
+  let html = '';
+  for (let i = tapeMin; i <= tapeMax; i++) {
+    const val = readTape(i);
+    const isHead = i === head;
+    const cls = `cell cell-${val}${isHead ? ' cell-head' : ''}`;
+    html += `<div class="${cls}">${val}</div>`;
+  }
+  container.innerHTML = html;
+  
+  document.getElementById('cur-state').textContent = state;
+  document.getElementById('cur-state').style.color = STATE_COLORS[state] || '#fff';
+  document.getElementById('steps').textContent = steps;
+  document.getElementById('score').textContent = Object.values(tape).filter(v => v === 1).length;
+  
+  const statusEl = document.getElementById('status');
+  if (halted) {
+    statusEl.textContent = 'HALTED';
+    statusEl.className = 'halted';
+  } else {
+    statusEl.textContent = 'RUNNING';
+    statusEl.className = 'running';
+  }
+}
+
+function renderHistory() {
+  const canvas = document.getElementById('history-canvas');
+  const ctx = canvas.getContext('2d');
+  const scale = 3;
+  
+  if (history.length === 0) {
+    ctx.fillStyle = '#0f0f14';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+  
+  // Find tape bounds across all history
+  let lo = 0, hi = 0;
+  for (const h of history) {
+    const positions = Object.keys(h.tape).map(Number).concat([h.head]);
+    if (positions.length) {
+      lo = Math.min(lo, ...positions);
+      hi = Math.max(hi, ...positions);
+    }
+  }
+  lo -= 2; hi += 2;
+  
+  const width = (hi - lo + 1) * scale;
+  const height = history.length * scale;
+  canvas.width = Math.max(600, width);
+  canvas.height = Math.min(400, Math.max(100, height));
+  
+  ctx.fillStyle = '#0f0f14';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  for (let row = 0; row < history.length; row++) {
+    const h = history[row];
+    for (let pos = lo; pos <= hi; pos++) {
+      const val = h.tape[pos] || 0;
+      const col = pos - lo;
+      if (pos === h.head) {
+        ctx.fillStyle = '#ffc850';
+      } else if (val === 1) {
+        ctx.fillStyle = '#b48cff';
+      } else {
+        ctx.fillStyle = '#0f0f14';
+      }
+      ctx.fillRect(col * scale, row * scale, scale, scale);
+    }
+  }
+}
+
+function step() {
+  if (halted) return;
+  
+  const sym = readTape(head);
+  const key = state + sym;
+  const rule = rules[key];
+  
+  if (!rule || rule[2] === 'H') {
+    if (rule) {
+      tape[head] = rule[0];
+    }
+    halted = true;
+    steps++;
+    history.push({ tape: {...tape}, head, state: 'H' });
+    renderTape();
+    renderHistory();
+    document.getElementById('btn-step').disabled = true;
+    document.getElementById('btn-run').disabled = true;
+    return;
+  }
+  
+  tape[head] = rule[0];
+  head += rule[1] === 'R' ? 1 : -1;
+  state = rule[2];
+  steps++;
+  
+  history.push({ tape: {...tape}, head, state });
+  renderTape();
+  renderHistory();
+}
+
+function run() {
+  if (halted || runInterval) return;
+  document.getElementById('btn-run').disabled = true;
+  document.getElementById('btn-stop').disabled = false;
+  runInterval = setInterval(() => {
+    step();
+    if (halted) stopRunning();
+  }, 50);
+}
+
+function stopRunning() {
+  if (runInterval) {
+    clearInterval(runInterval);
+    runInterval = null;
+  }
+  document.getElementById('btn-run').disabled = halted;
+  document.getElementById('btn-stop').disabled = true;
+}
+
+function reset() {
+  stopRunning();
+  tape = {};
+  head = 0;
+  state = 'A';
+  steps = 0;
+  halted = false;
+  history = [{ tape: {}, head: 0, state: 'A' }];
+  tapeMin = -15;
+  tapeMax = 15;
+  document.getElementById('btn-step').disabled = false;
+  document.getElementById('btn-run').disabled = false;
+  renderTape();
+  renderHistory();
+}
+
+function loadPreset(name) {
+  const preset = PRESETS[name];
+  if (!preset) return;
+  numStates = preset.states;
+  rules = { ...preset.rules };
+  buildRulesTable();
+  reset();
+}
+
+function buildRulesTable() {
+  const tbody = document.getElementById('rules-body');
+  let html = '';
+  for (let s = 0; s < numStates; s++) {
+    const label = LABELS[s];
+    for (let sym = 0; sym <= 1; sym++) {
+      const key = label + sym;
+      const rule = rules[key] || [0, 'R', 'H'];
+      const stateOptions = Array.from({length: numStates}, (_, i) => {
+        const l = LABELS[i];
+        return `<option value="${l}"${rule[2] === l ? ' selected' : ''}>${l}</option>`;
+      }).join('') + `<option value="H"${rule[2] === 'H' ? ' selected' : ''}>H</option>`;
+      
+      html += `<tr>
+        <td style="color:${STATE_COLORS[label] || '#fff'}">${label}</td>
+        <td>${sym}</td>
+        <td><input type="number" min="0" max="1" value="${rule[0]}" onchange="updateRule('${key}',0,+this.value)"></td>
+        <td><select onchange="updateRule('${key}',1,this.value)">
+          <option value="L"${rule[1]==='L'?' selected':''}>L</option>
+          <option value="R"${rule[1]==='R'?' selected':''}>R</option>
+        </select></td>
+        <td><select onchange="updateRule('${key}',2,this.value)">${stateOptions}</select></td>
+      </tr>`;
+    }
+  }
+  tbody.innerHTML = html;
+}
+
+function updateRule(key, idx, val) {
+  if (!rules[key]) rules[key] = [0, 'R', 'H'];
+  rules[key][idx] = val;
+}
+
+// Init
+loadPreset('bb3o');
+</script>
+</body>
+</html>

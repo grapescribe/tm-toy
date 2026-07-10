@@ -407,10 +407,65 @@ function buildRulesTable() {
 function updateRule(key, idx, val) {
   if (!rules[key]) rules[key] = [0, 'R', 'H'];
   rules[key][idx] = val;
+  updateHash();
+}
+
+// URL hash encoding: encode rules as compact string
+// Format: {numStates}:{A0write}{A0dir}{A0next}{A1write}{A1dir}{A1next}...
+// e.g. "3:1RB1RH0RC1RB1LC1LA" for BB(3) ones
+function encodeRules() {
+  let s = numStates + ':';
+  for (let i = 0; i < numStates; i++) {
+    const label = LABELS[i];
+    for (let sym = 0; sym <= 1; sym++) {
+      const key = label + sym;
+      const rule = rules[key] || [0, 'R', 'H'];
+      s += rule[0] + rule[1] + rule[2];
+    }
+  }
+  return s;
+}
+
+function decodeRules(s) {
+  const parts = s.split(':');
+  if (parts.length !== 2) return false;
+  numStates = parseInt(parts[0]);
+  if (isNaN(numStates) || numStates < 1 || numStates > 10) return false;
+  const data = parts[1];
+  rules = {};
+  let idx = 0;
+  for (let i = 0; i < numStates; i++) {
+    const label = LABELS[i];
+    for (let sym = 0; sym <= 1; sym++) {
+      if (idx + 3 > data.length) return false;
+      const write = parseInt(data[idx]);
+      const dir = data[idx + 1];
+      const next = data[idx + 2];
+      rules[label + sym] = [write, dir, next];
+      idx += 3;
+    }
+  }
+  return true;
+}
+
+function updateHash() {
+  window.location.hash = encodeRules();
+}
+
+function loadFromHash() {
+  const hash = window.location.hash.slice(1);
+  if (hash && decodeRules(hash)) {
+    buildRulesTable();
+    reset();
+    return true;
+  }
+  return false;
 }
 
 // Init
-loadPreset('bb3o');
+if (!loadFromHash()) {
+  loadPreset('bb3o');
+}
 </script>
 </body>
 </html>
